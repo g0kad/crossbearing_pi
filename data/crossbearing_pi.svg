@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- Three position lines crossing in a small cocked hat, with a fix mark. -->
+  <g stroke="#c0007a" stroke-width="2" stroke-linecap="round" fill="none">
+    <line x1="3" y1="27" x2="29" y2="9"/>
+    <line x1="5" y1="5" x2="27" y2="27"/>
+    <line x1="17" y1="2" x2="15" y2="30"/>
+  </g>
+  <circle cx="16" cy="16.6" r="5" fill="none" stroke="#000" stroke-width="1.6"/>
+  <circle cx="16" cy="16.6" r="1.4" fill="#000"/>
+</svg>
