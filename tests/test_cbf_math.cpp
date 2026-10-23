@@ -1,8 +1,10 @@
 // Unit tests for src/cbf_math.cpp. No test framework needed: build with
 // tests/CMakeLists.txt and run, or `ctest`. Exit code is the failure count.
 
+#include <clocale>
 #include <cmath>
 #include <cstdio>
+#include <locale>
 #include <functional>
 #include <stdexcept>
 #include <string>
@@ -232,6 +234,63 @@ void Formatting() {
   CHECK(FormatLat(49.99999999) == "50\xC2\xB0" "00.000'N");
 }
 
+void InputHelpers() {
+  CHECK_NEAR(*ParseBearing("045"), 45, 1e-12);
+  CHECK_NEAR(*ParseBearing("91.5"), 91.5, 1e-12);
+  CHECK_NEAR(*ParseBearing("45M"), 45, 1e-12);
+  CHECK_NEAR(*ParseBearing("45\xC2\xB0" "M"), 45, 1e-12);
+  CHECK_NEAR(*ParseBearing("360"), 0, 1e-12);
+  CHECK(!ParseBearing("361"));
+  CHECK(!ParseBearing("abc"));
+  CHECK(!ParseBearing(""));
+  CHECK(!ParseBearing("-5"));
+  CHECK_NEAR(*ParseNonNegative("5.5"), 5.5, 1e-12);
+  CHECK(!ParseNonNegative("x"));
+  CHECK(!ParseNonNegative(""));
+  CHECK(*ParseTime("1432") == 14 * 60 + 32);
+  CHECK(*ParseTime("14:32") == 14 * 60 + 32);
+  CHECK(*ParseTime("932") == 9 * 60 + 32);
+  CHECK(!ParseTime("2500"));
+  CHECK(!ParseTime("1260"));
+  CHECK(!ParseTime("12"));
+  CHECK(!ParseTime("ab12"));
+  CHECK(FormatTime(9 * 60 + 5) == "0905");
+  CHECK(FormatTime(1440 + 30) == "0030");
+  CHECK(MinutesBefore(600, 630) == 30);
+  CHECK(MinutesBefore(23 * 60 + 50, 10) == 20);  // across midnight
+  CHECK(MinutesBefore(640, 630) == -10);
+  CHECK(FormatBearing(45) == "045");
+  CHECK(FormatBearing(91.5) == "091.5");
+  CHECK(FormatBearing(359.96) == "360");
+  CHECK(FormatVarDev(-1.5) == "1.5W");
+  CHECK(FormatVarDev(0.9) == "0.9E");
+  CHECK(FormatVarDev(0.01) == "0");
+}
+
+// OpenCPN may run in a decimal comma locale; output and input must not change.
+void DecimalCommaLocale() {
+  const char* names[] = {"de_DE.UTF-8", "de_DE.utf8", "German_Germany.1252", "de-DE"};
+  const char* set = nullptr;
+  for (const char* n : names)
+    if ((set = std::setlocale(LC_ALL, n)) != nullptr) break;
+  if (!set) {
+    std::printf("     (no German locale available; locale test skipped)\n");
+    return;
+  }
+  try {
+    std::locale::global(std::locale(set));
+  } catch (const std::exception&) {
+  }
+  CHECK(FormatLat(50.5) == "50\xC2\xB0" "30.000'N");
+  CHECK(FormatVarDev(-1.5) == "1.5W");
+  CHECK(FormatBearing(91.5) == "091.5");
+  CHECK(ParseLatLon("50 47.13N", false) && std::fabs(*ParseLatLon("50 47.13N", false) - (50 + 47.13 / 60)) < 1e-9);
+  CHECK(ParseVarDev("2.5W") && std::fabs(*ParseVarDev("2.5W") + 2.5) < 1e-12);
+  CHECK(ParseBearing("91.5") && std::fabs(*ParseBearing("91.5") - 91.5) < 1e-12);
+  std::setlocale(LC_ALL, "C");
+  std::locale::global(std::locale::classic());
+}
+
 }  // namespace
 
 int main() {
@@ -250,6 +309,8 @@ int main() {
       {"running fix", RunningFix},
       {"parse lat/lon", ParseLatLonTest},
       {"formatting", Formatting},
+      {"input helpers", InputHelpers},
+      {"decimal comma locale", DecimalCommaLocale},
   };
   for (const auto& t : tests) {
     g_test = t.first;

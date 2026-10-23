@@ -57,6 +57,8 @@ set(SRC
     src/crossbearing_pi.cpp
     src/cbf_math.h
     src/cbf_math.cpp
+    src/dialogs.h
+    src/dialogs.cpp
     src/plug_utils.cpp
     src/plug_utils.h
 )

@@ -142,6 +142,33 @@ double DistanceNm(const LatLon& a, const LatLon& b);
  */
 std::optional<double> ParseLatLon(const std::string& text, bool is_lon);
 
+/** A bearing 0-360, optionally followed by °, M or T. */
+std::optional<double> ParseBearing(const std::string& text);
+
+/** A plain non-negative number such as a speed in knots. */
+std::optional<double> ParseNonNegative(const std::string& text);
+
+/** "1432", "14:32" or "932" -> minutes since midnight. */
+std::optional<int> ParseTime(const std::string& text);
+
+/** Minutes since midnight -> "hhmm". */
+std::string FormatTime(int minutes);
+
+/**
+ * Minutes from time t until the reference time ref (both minutes since
+ * midnight), allowing for midnight: negative if t is after ref.
+ */
+int MinutesBefore(int t, int ref);
+
+/** 45 -> "045", 91.5 -> "091.5". */
+std::string FormatBearing(double b);
+
+/** -1.5 -> "1.5W", 0.9 -> "0.9E", 0 -> "0". */
+std::string FormatVarDev(double v);
+
+/** Fixed decimal places with a decimal point whatever the locale. */
+std::string FormatFixed(double v, int decimals);
+
 /** 50.123456 -> "50°07.407'N" (UTF-8). */
 std::string FormatLat(double lat);
 std::string FormatLon(double lon);

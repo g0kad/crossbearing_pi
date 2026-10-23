@@ -14,7 +14,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <cstdio>
+#include <iomanip>
+#include <locale>
+#include <sstream>
 #include <stdexcept>
 
 namespace cbf {
@@ -106,6 +108,27 @@ double PerpDistance(const Line& l, const XY& q) {
   return std::fabs(l.u.x * (q.y - l.p.y) - l.u.y * (q.x - l.p.x));
 }
 
+// Number conversions ignore the C/C++ locale (OpenCPN may run with a decimal
+// comma locale); positions and bearings always use a decimal point.
+double ToDouble(const std::string& s) {
+  std::istringstream in(s);
+  in.imbue(std::locale::classic());
+  double v = 0;
+  in >> v;
+  return v;
+}
+
+std::string Fixed(double v, int decimals) {
+  std::ostringstream out;
+  out.imbue(std::locale::classic());
+  out << std::fixed << std::setprecision(decimals) << v;
+  return out.str();
+}
+
+std::string ZeroPad(const std::string& s, size_t width) {
+  return s.size() >= width ? s : std::string(width - s.size(), '0') + s;
+}
+
 std::string Trim(const std::string& s) {
   size_t b = s.find_first_not_of(" \t\r\n");
   if (b == std::string::npos) return "";
@@ -148,7 +171,7 @@ bool SplitNumbers(const std::string& s, const std::string& allowed,
         if (k == j + 1) return false;  // "12." with no decimals
         j = k;
       }
-      nums->push_back(std::stod(s.substr(i, j - i)));
+      nums->push_back(ToDouble(s.substr(i, j - i)));
       i = j;
     } else if (ch == ' ' || allowed.find(ch) != std::string::npos) {
       i++;
@@ -168,9 +191,7 @@ std::string FormatDDM(double v, int deg_width, char pos, char neg) {
     d += 1;
     m = 0;
   }
-  char buf[48];
-  std::snprintf(buf, sizeof(buf), "%0*d%s%06.3f'%c", deg_width, d, kDegSign, m, h);
-  return buf;
+  return ZeroPad(std::to_string(d), deg_width) + kDegSign + ZeroPad(Fixed(m, 3), 6) + "'" + h;
 }
 
 }  // namespace
@@ -263,11 +284,8 @@ FixResult ComputeFix(const std::vector<Observation>& observations,
                                   " lines are parallel");
         continue;
       }
-      if (cut < 30) {
-        char buf[16];
-        std::snprintf(buf, sizeof(buf), "%.0f", cut);
-        result.warnings.push_back(pair + ": poor angle of cut (" + buf + kDegSign + ")");
-      }
+      if (cut < 30)
+        result.warnings.push_back(pair + ": poor angle of cut (" + Fixed(cut, 0) + kDegSign + ")");
       if (x->t1 < 0 || x->t2 < 0) {
         result.warnings.push_back(pair +
                                   ": lines cross on the far side of an object - "
@@ -383,6 +401,59 @@ std::optional<double> ParseLatLon(const std::string& text, bool is_lon) {
   if (v > (is_lon ? 180 : 90)) return std::nullopt;
   return neg ? -v : v;
 }
+
+std::optional<double> ParseBearing(const std::string& text) {
+  std::string s = Upper(Trim(StripMarks(text)));
+  while (!s.empty() && (s.back() == 'M' || s.back() == 'T')) s = Trim(s.substr(0, s.size() - 1));
+  std::vector<double> nums;
+  if (!SplitNumbers(s, "", &nums) || nums.size() != 1) return std::nullopt;
+  if (nums[0] > 360) return std::nullopt;
+  return Norm360(nums[0]);
+}
+
+std::optional<double> ParseNonNegative(const std::string& text) {
+  std::vector<double> nums;
+  if (!SplitNumbers(Trim(text), "", &nums) || nums.size() != 1) return std::nullopt;
+  return nums[0];
+}
+
+std::optional<int> ParseTime(const std::string& text) {
+  std::string s = Trim(text);
+  size_t colon = s.find(':');
+  if (colon != std::string::npos) s.erase(colon, 1);
+  if (s.size() < 3 || s.size() > 4) return std::nullopt;
+  for (char ch : s)
+    if (!std::isdigit(static_cast<unsigned char>(ch))) return std::nullopt;
+  int h = std::stoi(s.substr(0, s.size() - 2)), m = std::stoi(s.substr(s.size() - 2));
+  if (h > 23 || m > 59) return std::nullopt;
+  return h * 60 + m;
+}
+
+std::string FormatTime(int minutes) {
+  minutes = ((minutes % 1440) + 1440) % 1440;
+  return ZeroPad(std::to_string(minutes / 60), 2) + ZeroPad(std::to_string(minutes % 60), 2);
+}
+
+int MinutesBefore(int t, int ref) {
+  int dt = ((ref - t) % 1440 + 1440) % 1440;
+  return dt > 720 ? dt - 1440 : dt;
+}
+
+std::string FormatBearing(double b) {
+  double r = std::round(b * 10) / 10;
+  bool whole = std::fabs(r - std::round(r)) < 1e-9;
+  std::string s = Fixed(r, whole ? 0 : 1);
+  size_t dot = s.find('.');
+  std::string int_part = dot == std::string::npos ? s : s.substr(0, dot);
+  return ZeroPad(int_part, 3) + (dot == std::string::npos ? "" : s.substr(dot));
+}
+
+std::string FormatVarDev(double v) {
+  if (std::fabs(v) < 0.05) return "0";
+  return Fixed(std::fabs(v), 1) + (v < 0 ? "W" : "E");
+}
+
+std::string FormatFixed(double v, int decimals) { return Fixed(v, decimals); }
 
 std::string FormatLat(double lat) { return FormatDDM(lat, 2, 'N', 'S'); }
 std::string FormatLon(double lon) { return FormatDDM(lon, 3, 'E', 'W'); }
