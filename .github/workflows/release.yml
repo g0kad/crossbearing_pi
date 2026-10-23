@@ -2,6 +2,7 @@
 # Build plugin tarballs on GitHub Actions with the template's own CI scripts,
 # and publish them on GitHub Releases instead of Cloudsmith.
 #
+# Debian targets: bookworm only (OpenCPN/OpenPlotter are not used on trixie yet).
 #  - push to main / manual run: build everything, keep the tarballs and
 #    metadata as workflow artifacts (for testing).
 #  - tag v*: also create a GitHub pre-release with the tarballs and the
@@ -28,8 +29,6 @@ jobs:
         include:
           - {target: bookworm, arch: x86_64, runner: ubuntu-22.04, tuple: 'debian-x86_64;12;x86_64'}
           - {target: bookworm, arch: arm64, runner: ubuntu-22.04-arm, tuple: 'debian-arm64;12;arm64'}
-          - {target: trixie, arch: x86_64, runner: ubuntu-22.04, tuple: 'debian-x86_64;13;x86_64'}
-          - {target: trixie, arch: arm64, runner: ubuntu-22.04-arm, tuple: 'debian-arm64;13;arm64'}
     env:
       OCPN_TARGET: ${{ matrix.target }}
       TARGET_TUPLE: ${{ matrix.tuple }}
