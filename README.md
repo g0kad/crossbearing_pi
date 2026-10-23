@@ -2,7 +2,9 @@
 
 Plot a position fix from hand bearing compass bearings when GPS is not available.
 
-**Status: early development, not yet released.**
+**Status: alpha.** Test builds for Windows, macOS, Linux, Raspberry Pi and Flatpak are on the
+[releases page](https://github.com/g0kad/crossbearing_pi/releases); install them with OpenCPN's
+*Options → Plugins → Import plugin...*
 
 - Right-click a charted object, choose *Cross bearing: bearing to object here*, and enter the magnetic
   bearing and time.
@@ -11,6 +13,12 @@ Plot a position fix from hand bearing compass bearings when GPS is not available
   and named with the time.
 - Three bearings show the cocked hat; the result reports its size and warns about poor angles of cut
   or bearings taken far apart.
+
+![Right-click menu](docs/images/context-menu.png)
+
+![Bearing dialog](docs/images/bearing-dialog.png)
+
+![Fix in the cocked hat](docs/images/fix.png)
 
 A JavaScript prototype of the same tool, for the OpenCPN JavaScript plugin, is at
 [g0kad/CBF_OCPN](https://github.com/g0kad/CBF_OCPN).

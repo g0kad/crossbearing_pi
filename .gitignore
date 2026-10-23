@@ -14,3 +14,6 @@ plugins
 *.bak
 buildwin/*.7z
 *.user
+
+# Raw screenshots (may show own-ship position); publish cropped copies from docs/images
+screenshots/
