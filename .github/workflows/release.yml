@@ -1,0 +1,173 @@
+---
+# Build plugin tarballs on GitHub Actions with the template's own CI scripts,
+# and publish them on GitHub Releases instead of Cloudsmith.
+#
+#  - push to main / manual run: build everything, keep the tarballs and
+#    metadata as workflow artifacts (for testing).
+#  - tag v*: also create a GitHub pre-release with the tarballs and the
+#    metadata .xml files, rewritten so <tarball-url> points at the release.
+#    Those .xml files are what goes into a catalog PR (OpenCPN/plugins).
+#
+# No secrets are needed: the template upload scripts skip Cloudsmith and
+# the catalog git-push when their keys are not set.
+name: release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  debian:
+    name: ${{ matrix.target }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {target: bookworm, arch: x86_64, runner: ubuntu-22.04, tuple: 'debian-x86_64;12;x86_64'}
+          - {target: bookworm, arch: arm64, runner: ubuntu-22.04-arm, tuple: 'debian-arm64;12;arm64'}
+          - {target: trixie, arch: x86_64, runner: ubuntu-22.04, tuple: 'debian-x86_64;13;x86_64'}
+          - {target: trixie, arch: arm64, runner: ubuntu-22.04-arm, tuple: 'debian-arm64;13;arm64'}
+    env:
+      OCPN_TARGET: ${{ matrix.target }}
+      TARGET_TUPLE: ${{ matrix.tuple }}
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 10
+      - name: Build
+        run: ci/circleci-build-debian-docker.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.target }}-${{ matrix.arch }}
+          path: |
+            build-debian/CrossBearing-*.tar.gz
+            build-debian/CrossBearing-*.xml
+          if-no-files-found: error
+
+  flatpak:
+    name: flatpak ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: x86_64, runner: ubuntu-22.04, target: flatpak}
+          - {arch: aarch64, runner: ubuntu-22.04-arm, target: flatpak-arm64}
+    env:
+      OCPN_TARGET: ${{ matrix.target }}
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      BRANCH: 2408
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 10
+      - name: Build
+        run: ci/circleci-build-flatpak.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-flatpak-${{ matrix.arch }}
+          path: |
+            /build-flatpak/CrossBearing-*.tar.gz
+            /build-flatpak/CrossBearing-*.xml
+          if-no-files-found: error
+
+  msvc:
+    name: windows ${{ matrix.platform }}
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {platform: Win32, arch: x86}
+          - {platform: x64, arch: x64}
+    env:
+      PLATFORM: ${{ matrix.platform }}
+      CONFIGURATION: RelWithDebInfo
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 10
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+      - name: Build
+        shell: cmd
+        run: call ci\appveyor.bat
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-msvc-${{ matrix.platform }}
+          path: |
+            build/CrossBearing-*.tar.gz
+            build/CrossBearing-*.xml
+          if-no-files-found: error
+
+  macos:
+    name: macos universal
+    runs-on: macos-14
+    env:
+      OCPN_TARGET: macos
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      OSX_ARCHITECTURES: arm64;x86_64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 10
+      - name: Build
+        run: |
+          sudo chmod go+w /usr/local
+          ci/circleci-build-macos.sh
+      - name: Show plugin dependencies
+        run: otool -L build-osx/app/*/OpenCPN.app/Contents/PlugIns/*.dylib || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-macos-universal
+          path: |
+            build-osx/CrossBearing-*.tar.gz
+            build-osx/CrossBearing-*.xml
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [debian, flatpak, msvc, macos]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pkg-*
+          path: dist
+          merge-multiple: true
+      - name: Point metadata at the release and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd dist
+          base="https://github.com/$REPO/releases/download/$TAG"
+          # GitHub renames asset files with special characters such as '+'
+          # in build version strings, so rename them first and point the
+          # metadata at the new names. Checksums cover file contents only.
+          for xml in *.xml; do
+            old=$(grep -o '<tarball-url>[^<]*</tarball-url>' "$xml" | sed 's:<[^>]*>::g' | xargs)
+            tarball=$(basename "$old")
+            test -f "$tarball" || { echo "$xml refers to missing $tarball"; exit 1; }
+            safe=$(echo "$tarball" | tr '+' '-')
+            [ "$tarball" = "$safe" ] || mv "$tarball" "$safe"
+            sed -i "s#<tarball-url>.*</tarball-url>#<tarball-url>$base/$safe</tarball-url>#" "$xml"
+            echo "$xml -> $base/$safe"
+          done
+          ls -l
+          gh release create "$TAG" --repo "$REPO" --prerelease --title "CrossBearing $TAG" \
+            --notes "Alpha test build. Download the .tar.gz for your system and install it with OpenCPN's Options > Plugins > Import plugin... The .xml files are catalog metadata." \
+            ./*.tar.gz ./*.xml
