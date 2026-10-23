@@ -1,5 +1,5 @@
 /***************************************************************************
- * CrossBearing plugin: cross bearing and running fixes without GPS.
+ * CrossBearing plugin: cross bearing fixes without GPS.
  *
  * Copyright (C) 2026 Mike G0KAD
  *
@@ -9,14 +9,13 @@
  * (at your option) any later version.
  ***************************************************************************/
 
-// Workflow
-//   Cross bearing fix: right-click each charted object (or an existing
-//   waypoint), enter the magnetic bearing and time. Each position line is
-//   drawn straight away. "Plot fix" on the last bearing trims the lines and
-//   drops a fix mark (circle round a dot) named with the time.
-//   Running fix: when bearing times differ by more than kRunningFixMinutes,
-//   ask for course, speed and tide and advance the earlier lines to the time
-//   of the last bearing entered; advanced lines are drawn dashed.
+// Workflow: right-click each charted object (or an existing waypoint),
+// enter the magnetic bearing and time. Each position line is drawn straight
+// away. "Plot fix" on the last bearing trims the lines and drops a fix mark
+// (circle round a dot) named with the time.
+//
+// Running fixes were tried and removed as too fiddly in practice; cbf_math
+// still supports advancing a line (cbf::Observation::run).
 //
 // Position lines are drawn as a chart overlay, not routes, so nothing is
 // added to the Route Manager. The fix itself is a normal waypoint.
@@ -38,6 +37,7 @@ namespace {
 const double kProvisionalLineNm = 4;  // length of a line before there is a fix
 const double kOverrunNm = 0.5;        // how far lines run past the fix
 const char* const kFixIcon = "Symbol-Circle";
+const int kSpreadWarnMinutes = 5;     // warn if bearings were taken further apart
 const wxColour kLineColour(192, 0, 122);  // magenta
 
 const wxString kDeg = wxString::FromUTF8("\xC2\xB0");
@@ -77,8 +77,6 @@ int CrossBearingPi::Init() {
       new wxMenuItem(nullptr, wxID_ANY, _("Cross bearing: bearing to object here")), this);
   m_plot_menu_id = AddCanvasContextMenuItem(
       new wxMenuItem(nullptr, wxID_ANY, _("Cross bearing: plot fix")), this);
-  m_running_help_menu_id = AddCanvasContextMenuItem(
-      new wxMenuItem(nullptr, wxID_ANY, _("Cross bearing: running fix...")), this);
   m_clear_menu_id = AddCanvasContextMenuItem(
       new wxMenuItem(nullptr, wxID_ANY, _("Cross bearing: clear bearings and lines")), this);
   m_waypoint_menu_id = AddCanvasContextMenuItemExt(
@@ -91,8 +89,7 @@ int CrossBearingPi::Init() {
 }
 
 bool CrossBearingPi::DeInit() {
-  for (int* id : {&m_bearing_menu_id, &m_plot_menu_id, &m_running_help_menu_id, &m_clear_menu_id,
-                  &m_waypoint_menu_id}) {
+  for (int* id : {&m_bearing_menu_id, &m_plot_menu_id, &m_clear_menu_id, &m_waypoint_menu_id}) {
     if (*id >= 0) RemoveCanvasContextMenuItem(*id);
     *id = -1;
   }
@@ -136,8 +133,6 @@ void CrossBearingPi::OnContextMenuItemCallback(int id) {
     StartBearing({m_cursor_lat, m_cursor_lon}, "");
   else if (id == m_plot_menu_id)
     PlotFix();
-  else if (id == m_running_help_menu_id)
-    ShowRunningFixHelp();
   else if (id == m_clear_menu_id) {
     m_kept_lines.clear();
     ClearBearings();
@@ -198,10 +193,8 @@ void CrossBearingPi::StartBearing(const cbf::LatLon& pos, const wxString& name) 
   }
   earlier.Trim();
 
-  std::vector<int> earlier_minutes;
-  for (const auto& b : m_bearings) earlier_minutes.push_back(b.minutes);
   BearingDialog dlg(m_parent_window, n, initial, m_variation, m_variation_from_wmm, earlier,
-                    earlier_minutes, !m_bearings.empty());
+                    !m_bearings.empty());
   m_open_dialog = &dlg;
   int result = dlg.ShowModal();
   m_open_dialog = nullptr;
@@ -220,7 +213,7 @@ void CrossBearingPi::StartBearing(const cbf::LatLon& pos, const wxString& name) 
 
   auto ends = cbf::PositionLineEnds(b.object, cbf::CompassToTrue(b.bearing, *m_variation),
                                     kProvisionalLineNm);
-  m_lines.push_back({ends[0], ends[1], false});
+  m_lines.push_back({ends[0], ends[1]});
   UpdateMenus();
   RequestRefresh(m_parent_window);
 
@@ -235,45 +228,10 @@ void CrossBearingPi::PlotFix() {
                           _("Cross bearing"), wxOK);
     return;
   }
+  // The fix is for the time of the last bearing; note if they were spread out.
   int ref = m_bearings.back().minutes;
-  std::vector<int> times;
-  for (const auto& b : m_bearings) times.push_back(b.minutes);
-  if (TimeSpan(times, ref) <= kRunningFixMinutes) {
-    ComputeAndPlot(std::nullopt);
-    return;
-  }
-
-  wxString explanation =
-      wxString::Format(_("Bearings span %s to %s.\nEarlier lines will be advanced to %s\nby the "
-                         "run and the tide."),
-                       W(cbf::FormatTime(m_bearings.front().minutes)), W(cbf::FormatTime(ref)),
-                       W(cbf::FormatTime(ref)));
-  RunDialog dlg(m_parent_window, explanation, m_run_entry);
-  int result = dlg.ShowModal();
-  m_run_entry = dlg.GetEntry();
-  if (result != wxID_OK) return;
-  ComputeAndPlot(dlg.GetParams());
-}
-
-void CrossBearingPi::ShowRunningFixHelp() {
-  wxString text = wxString::Format(
-      _("A running fix uses bearings taken at different times, of the same object or "
-        "different ones.\n\n"
-        "1. Right-click the object and choose 'Cross bearing: bearing to object here'. "
-        "Enter the bearing and the time it was taken, then press 'Add more'.\n"
-        "2. Later, take another bearing and enter it the same way with its own time. "
-        "The dialog shows when the times make a running fix (more than %d minutes apart).\n"
-        "3. Press 'Plot fix'. You will be asked for the course steered, speed through the "
-        "water and the tide. Earlier lines are advanced to the time of the last bearing "
-        "and drawn dashed, and the fix is named RFix with that time."),
-      kRunningFixMinutes);
-  OCPNMessageBox_PlugIn(m_parent_window, text, _("Running fix"), wxOK);
-}
-
-void CrossBearingPi::ComputeAndPlot(const std::optional<RunParams>& run) {
-  double variation = m_variation.value_or(0);
-  double course_true = run ? cbf::CompassToTrue(run->course_mag, variation, run->deviation) : 0;
-  int ref = m_bearings.back().minutes;
+  int span = 0;
+  for (const auto& b : m_bearings) span = std::max(span, std::abs(cbf::MinutesBefore(b.minutes, ref)));
 
   std::vector<cbf::Observation> obs;
   for (const auto& b : m_bearings) {
@@ -281,32 +239,28 @@ void CrossBearingPi::ComputeAndPlot(const std::optional<RunParams>& run) {
     o.name = U(b.name);
     o.object = b.object;
     o.bearing = b.bearing;
-    int dt = cbf::MinutesBefore(b.minutes, ref);
-    if (run && dt != 0)
-      o.run = cbf::Run{course_true, run->speed * dt / 60.0, run->set, run->rate * dt / 60.0};
     obs.push_back(o);
   }
 
   cbf::FixResult result;
   try {
     cbf::FixOptions options;
-    options.variation = variation;
+    options.variation = m_variation.value_or(0);
     result = cbf::ComputeFix(obs, options);
   } catch (const std::exception& e) {
     OCPNMessageBox_PlugIn(m_parent_window, _("No fix: ") + W(e.what()), _("Cross bearing"), wxOK);
     return;
   }
 
-  // Redraw each line from its object (or advanced point) to just past the fix.
+  // Redraw each line from its object to just past the fix.
   m_lines.clear();
   for (const auto& l : result.lines) {
-    auto ends = cbf::PositionLineEnds(l.anchor, l.true_bearing, std::max(l.range_nm, 0.0) + kOverrunNm);
-    m_lines.push_back({ends[0], ends[1], l.advanced});
+    auto ends = cbf::PositionLineEnds(l.object, l.true_bearing, std::max(l.range_nm, 0.0) + kOverrunNm);
+    m_lines.push_back({ends[0], ends[1]});
   }
 
-  wxString time = W(cbf::FormatTime(ref));
-  wxString label = (run ? "RFix " : "Fix ") + time;
-  wxString summary = ResultText(result, run, course_true);
+  wxString label = _("Fix ") + W(cbf::FormatTime(ref));
+  wxString summary = ResultText(result, span);
 
   PlugIn_Waypoint_ExV2 wp(result.fix.lat, result.fix.lon, kFixIcon, label, GetNewGUID());
   wp.IsNameVisible = true;
@@ -315,36 +269,23 @@ void CrossBearingPi::ComputeAndPlot(const std::optional<RunParams>& run) {
   AddSingleWaypointExV2(&wp, true);
   RequestRefresh(m_parent_window);
 
-  ResultDialog dlg(m_parent_window, (run ? _("Running fix ") : _("Fix ")) + time, summary);
+  ResultDialog dlg(m_parent_window, label, summary);
   if (dlg.ShowModal() == ResultDialog::ID_KEEP_LINES)
     m_kept_lines.insert(m_kept_lines.end(), m_lines.begin(), m_lines.end());
   // The fix mark stays either way; the next fix starts with no bearings.
   ClearBearings();
 }
 
-wxString CrossBearingPi::ResultText(const cbf::FixResult& r, const std::optional<RunParams>& run,
-                                    double course_true) const {
+wxString CrossBearingPi::ResultText(const cbf::FixResult& r, int span_minutes) const {
   wxString t = W(cbf::FormatLat(r.fix.lat)) + "  " + W(cbf::FormatLon(r.fix.lon)) + "\n";
   t += _("Variation ") + W(cbf::FormatVarDev(m_variation.value_or(0))) +
        (m_variation_from_wmm ? _(" (WMM)") : _(" (entered)")) + "\n";
-  if (run) {
-    t += _("Run: ") + W(cbf::FormatBearing(run->course_mag)) + kDeg + "M (" +
-         W(cbf::FormatBearing(course_true)) + kDeg + "T) " + _("at ") +
-         W(cbf::FormatFixed(run->speed, 1)) + " kn";
-    if (run->rate > 0)
-      t += _(", tide ") + W(cbf::FormatBearing(run->set)) + kDeg + "T " +
-           W(cbf::FormatFixed(run->rate, 1)) + " kn";
-    else
-      t += _(", no tide");
-    t += "\n";
-  }
   for (size_t i = 0; i < r.lines.size(); i++) {
     const auto& l = r.lines[i];
     t += W(cbf::FormatTime(m_bearings[i].minutes)) + " " + W(l.name) + ": " +
          W(cbf::FormatBearing(l.observed_bearing)) + kDeg + "M = " +
-         W(cbf::FormatBearing(l.true_bearing)) + kDeg + "T" +
-         (l.advanced ? _(" (advanced)") : ", " + W(cbf::FormatFixed(l.range_nm, 1)) + " nm") +
-         "\n";
+         W(cbf::FormatBearing(l.true_bearing)) + kDeg + "T, " +
+         W(cbf::FormatFixed(l.range_nm, 1)) + " nm\n";
   }
   if (r.cocked_hat) {
     t += _("Cocked hat: longest side ") + W(cbf::FormatFixed(r.cocked_hat->max_side_nm, 2)) +
@@ -354,6 +295,11 @@ wxString CrossBearingPi::ResultText(const cbf::FixResult& r, const std::optional
     t += _("Spread of crossings: ") + W(cbf::FormatFixed(r.spread_nm, 2)) + " nm\n";
   }
   for (const auto& w : r.warnings) t += _("Warning: ") + W(w) + "\n";
+  if (span_minutes > kSpreadWarnMinutes)
+    t += wxString::Format(_("Warning: bearings were taken %d minutes apart; take them as close "
+                            "together as possible."),
+                          span_minutes) +
+         "\n";
   return t.Trim();
 }
 
@@ -383,30 +329,15 @@ bool CrossBearingPi::RenderGLOverlayMultiCanvas(wxGLContext* pcontext, PlugIn_Vi
   return true;
 }
 
-// Dashes are drawn as separate solid segments so they look the same with
-// and without OpenGL.
 void CrossBearingPi::DrawLines(piDC& dc, PlugIn_ViewPort* vp) {
   int width = std::max(2, static_cast<int>(std::lround(GetOCPNGUIToolScaleFactor_PlugIn() * 2)));
   dc.SetPen(wxPen(kLineColour, width, wxPENSTYLE_SOLID));
-  const double dash = 12.0 * width / 2, gap = 8.0 * width / 2;
-
   for (const auto* set : {&m_kept_lines, &m_lines}) {
     for (const auto& l : *set) {
       wxPoint a, b;
       GetCanvasPixLL(vp, &a, l.start.lat, l.start.lon);
       GetCanvasPixLL(vp, &b, l.end.lat, l.end.lon);
-      if (!l.dashed) {
-        dc.DrawLine(a.x, a.y, b.x, b.y);
-        continue;
-      }
-      double len = std::hypot(b.x - a.x, b.y - a.y);
-      if (len < 1) continue;
-      double ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
-      for (double s = 0; s < len; s += dash + gap) {
-        double e = std::min(s + dash, len);
-        dc.DrawLine(static_cast<int>(a.x + ux * s), static_cast<int>(a.y + uy * s),
-                    static_cast<int>(a.x + ux * e), static_cast<int>(a.y + uy * e));
-      }
+      dc.DrawLine(a.x, a.y, b.x, b.y);
     }
   }
 }

@@ -18,7 +18,6 @@
 #endif
 
 #include <optional>
-#include <vector>
 
 #include "cbf_math.h"
 
@@ -48,14 +47,9 @@ class BearingDialog : public wxDialog {
 public:
   enum { ID_ADD_MORE = wxID_HIGHEST + 1, ID_PLOT_FIX, ID_POSITION };
 
-  /**
-   * earlier_minutes: times of the bearings already entered, so the dialog
-   * can say when the bearings will make a running fix.
-   */
   BearingDialog(wxWindow* parent, int number, const BearingEntry& initial,
                 std::optional<double> variation, bool variation_from_wmm,
-                const wxString& earlier_bearings, const std::vector<int>& earlier_minutes,
-                bool can_plot);
+                const wxString& earlier_bearings, bool can_plot);
 
   const BearingEntry& GetEntry() const { return m_entry; }
 
@@ -65,30 +59,17 @@ public:
 private:
   void OnPosition(wxCommandEvent& event);
   void OnAdd(wxCommandEvent& event);
-  void ShowError(const wxString& message);
   void UpdatePositionText();
-  void UpdateRunningFixNote();
 
   BearingEntry m_entry;
-  std::vector<int> m_earlier_minutes;
   wxTextCtrl* m_name;
   wxTextCtrl* m_bearing;
   wxTextCtrl* m_time;
   wxTextCtrl* m_variation;
   wxStaticText* m_variation_hint;
   wxStaticText* m_position;
-  wxStaticText* m_running_note;
   wxStaticText* m_error;
 };
-
-/** Bearings further apart in time than this make a running fix. */
-const int kRunningFixMinutes = 2;
-
-/**
- * Span in minutes between the earliest of times and ref (the time of the
- * last bearing), allowing for midnight.
- */
-int TimeSpan(const std::vector<int>& times, int ref);
 
 /** Type an object's position, e.g. from a list of lights. */
 class PositionDialog : public wxDialog {
@@ -108,44 +89,6 @@ private:
   wxString m_lon_text;
   wxTextCtrl* m_lat;
   wxTextCtrl* m_lon;
-  wxStaticText* m_error;
-};
-
-/** Course, speed and tide for a running fix, as typed (kept between uses). */
-struct RunEntry {
-  wxString course;
-  wxString deviation = "0";
-  wxString speed;
-  wxString set;
-  wxString rate;
-};
-
-/** Parsed and validated running fix parameters. */
-struct RunParams {
-  double course_mag = 0;
-  double deviation = 0;
-  double speed = 0;
-  double set = 0;
-  double rate = 0;
-};
-
-class RunDialog : public wxDialog {
-public:
-  RunDialog(wxWindow* parent, const wxString& explanation, const RunEntry& initial);
-
-  const RunEntry& GetEntry() const { return m_entry; }
-  const RunParams& GetParams() const { return m_params; }
-
-private:
-  void OnOK(wxCommandEvent& event);
-
-  RunEntry m_entry;
-  RunParams m_params;
-  wxTextCtrl* m_course;
-  wxTextCtrl* m_deviation;
-  wxTextCtrl* m_speed;
-  wxTextCtrl* m_set;
-  wxTextCtrl* m_rate;
   wxStaticText* m_error;
 };
 

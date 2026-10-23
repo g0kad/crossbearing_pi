@@ -38,13 +38,12 @@ set(PKG_PRERELEASE "")  # Empty, or a tag like 'beta'
 
 set(DISPLAY_NAME CrossBearing)    # Dialogs, installer artifacts, ...
 set(PLUGIN_API_NAME CrossBearing) # As of GetCommonName() in plugin API
-set(PKG_SUMMARY "Cross bearing and running fixes without GPS")
+set(PKG_SUMMARY "Cross bearing fixes without GPS")
 set(PKG_DESCRIPTION [=[
 Plot a position fix from hand bearing compass bearings when GPS is not
 available. Right-click charted objects, enter the magnetic bearings, and the
 plugin draws the position lines and drops a fix mark in the cocked hat.
-Variation comes from the WMM plugin. Bearings taken at different times give
-a running fix, with the earlier lines advanced by the run and the tide.
+Variation comes from the WMM plugin.
 ]=])
 
 set(PKG_AUTHOR "Mike G0KAD")

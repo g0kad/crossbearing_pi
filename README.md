@@ -9,8 +9,8 @@ Plot a position fix from hand bearing compass bearings when GPS is not available
 - Variation comes from OpenCPN's WMM plugin and can be overridden.
 - Position lines are drawn on the chart; the fix mark (circle round a dot) is dropped in the cocked hat
   and named with the time.
-- Bearings taken at different times give a running fix: earlier lines are advanced by the course, speed
-  and tide.
+- Three bearings show the cocked hat; the result reports its size and warns about poor angles of cut
+  or bearings taken far apart.
 
 A JavaScript prototype of the same tool, for the OpenCPN JavaScript plugin, is at
 [g0kad/CBF_OCPN](https://github.com/g0kad/CBF_OCPN).
