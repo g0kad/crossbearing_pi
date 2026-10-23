@@ -69,7 +69,12 @@ else ()
   set(_gitversion "${_git_tag}")
 endif ()
 
-if (WIN32)
+if (WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+  # Local change to the template: x64 builds are x86_64, as other msvc-64
+  # plugins in the catalog declare.
+  set(_pkg_arch "x86_64")
+  set(target_arch "x86_64")
+elseif (WIN32)
   set(_pkg_arch "x86")
   set(target_arch "x86")
 elseif (APPLE AND CMAKE_OSX_ARCHITECTURES)
