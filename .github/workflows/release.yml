@@ -3,6 +3,8 @@
 # and publish them on GitHub Releases instead of Cloudsmith.
 #
 # Debian targets: bookworm only (OpenCPN/OpenPlotter are not used on trixie yet).
+# Windows: Win32 only, as OpenCPN is only offered as a 32-bit Windows build.
+# To add 64-bit, put {platform: x64, arch: x64} back in the msvc matrix.
 #  - push to main / manual run: build everything, keep the tarballs and
 #    metadata as workflow artifacts (for testing).
 #  - tag v*: also create a GitHub pre-release with the tarballs and the
@@ -84,7 +86,6 @@ jobs:
       matrix:
         include:
           - {platform: Win32, arch: x86}
-          - {platform: x64, arch: x64}
     env:
       PLATFORM: ${{ matrix.platform }}
       CONFIGURATION: RelWithDebInfo
