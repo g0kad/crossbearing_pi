@@ -78,6 +78,7 @@ private:
 
   void StartBearing(const cbf::LatLon& pos, const wxString& name);
   void PlotFix();
+  void ShowRunningFixHelp();
   void ComputeAndPlot(const std::optional<RunParams>& run);
   wxString ResultText(const cbf::FixResult& r, const std::optional<RunParams>& run,
                       double course_true) const;
@@ -97,6 +98,7 @@ private:
   int m_waypoint_menu_id = -1;
   int m_plot_menu_id = -1;
   int m_clear_menu_id = -1;
+  int m_running_help_menu_id = -1;
 
   std::vector<Bearing> m_bearings;
   std::optional<double> m_variation;  // last used, east positive

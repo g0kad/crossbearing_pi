@@ -37,7 +37,6 @@ namespace {
 
 const double kProvisionalLineNm = 4;  // length of a line before there is a fix
 const double kOverrunNm = 0.5;        // how far lines run past the fix
-const int kRunningFixMinutes = 2;
 const char* const kFixIcon = "Symbol-Circle";
 const wxColour kLineColour(192, 0, 122);  // magenta
 
@@ -78,6 +77,8 @@ int CrossBearingPi::Init() {
       new wxMenuItem(nullptr, wxID_ANY, _("Cross bearing: bearing to object here")), this);
   m_plot_menu_id = AddCanvasContextMenuItem(
       new wxMenuItem(nullptr, wxID_ANY, _("Cross bearing: plot fix")), this);
+  m_running_help_menu_id = AddCanvasContextMenuItem(
+      new wxMenuItem(nullptr, wxID_ANY, _("Cross bearing: running fix...")), this);
   m_clear_menu_id = AddCanvasContextMenuItem(
       new wxMenuItem(nullptr, wxID_ANY, _("Cross bearing: clear bearings and lines")), this);
   m_waypoint_menu_id = AddCanvasContextMenuItemExt(
@@ -90,7 +91,8 @@ int CrossBearingPi::Init() {
 }
 
 bool CrossBearingPi::DeInit() {
-  for (int* id : {&m_bearing_menu_id, &m_plot_menu_id, &m_clear_menu_id, &m_waypoint_menu_id}) {
+  for (int* id : {&m_bearing_menu_id, &m_plot_menu_id, &m_running_help_menu_id, &m_clear_menu_id,
+                  &m_waypoint_menu_id}) {
     if (*id >= 0) RemoveCanvasContextMenuItem(*id);
     *id = -1;
   }
@@ -134,6 +136,8 @@ void CrossBearingPi::OnContextMenuItemCallback(int id) {
     StartBearing({m_cursor_lat, m_cursor_lon}, "");
   else if (id == m_plot_menu_id)
     PlotFix();
+  else if (id == m_running_help_menu_id)
+    ShowRunningFixHelp();
   else if (id == m_clear_menu_id) {
     m_kept_lines.clear();
     ClearBearings();
@@ -194,8 +198,10 @@ void CrossBearingPi::StartBearing(const cbf::LatLon& pos, const wxString& name) 
   }
   earlier.Trim();
 
+  std::vector<int> earlier_minutes;
+  for (const auto& b : m_bearings) earlier_minutes.push_back(b.minutes);
   BearingDialog dlg(m_parent_window, n, initial, m_variation, m_variation_from_wmm, earlier,
-                    !m_bearings.empty());
+                    earlier_minutes, !m_bearings.empty());
   m_open_dialog = &dlg;
   int result = dlg.ShowModal();
   m_open_dialog = nullptr;
@@ -230,9 +236,9 @@ void CrossBearingPi::PlotFix() {
     return;
   }
   int ref = m_bearings.back().minutes;
-  int span = 0;
-  for (const auto& b : m_bearings) span = std::max(span, std::abs(cbf::MinutesBefore(b.minutes, ref)));
-  if (span <= kRunningFixMinutes) {
+  std::vector<int> times;
+  for (const auto& b : m_bearings) times.push_back(b.minutes);
+  if (TimeSpan(times, ref) <= kRunningFixMinutes) {
     ComputeAndPlot(std::nullopt);
     return;
   }
@@ -247,6 +253,21 @@ void CrossBearingPi::PlotFix() {
   m_run_entry = dlg.GetEntry();
   if (result != wxID_OK) return;
   ComputeAndPlot(dlg.GetParams());
+}
+
+void CrossBearingPi::ShowRunningFixHelp() {
+  wxString text = wxString::Format(
+      _("A running fix uses bearings taken at different times, of the same object or "
+        "different ones.\n\n"
+        "1. Right-click the object and choose 'Cross bearing: bearing to object here'. "
+        "Enter the bearing and the time it was taken, then press 'Add more'.\n"
+        "2. Later, take another bearing and enter it the same way with its own time. "
+        "The dialog shows when the times make a running fix (more than %d minutes apart).\n"
+        "3. Press 'Plot fix'. You will be asked for the course steered, speed through the "
+        "water and the tide. Earlier lines are advanced to the time of the last bearing "
+        "and drawn dashed, and the fix is named RFix with that time."),
+      kRunningFixMinutes);
+  OCPNMessageBox_PlugIn(m_parent_window, text, _("Running fix"), wxOK);
 }
 
 void CrossBearingPi::ComputeAndPlot(const std::optional<RunParams>& run) {

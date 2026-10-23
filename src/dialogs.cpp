@@ -11,6 +11,9 @@
 
 #include "dialogs.h"
 
+#include <algorithm>
+#include <cstdlib>
+
 #include <wx/statline.h>
 
 namespace {
@@ -49,13 +52,21 @@ void SetError(wxDialog* dialog, wxStaticText* error, const wxString& message) {
 
 }  // namespace
 
+int TimeSpan(const std::vector<int>& times, int ref) {
+  int span = 0;
+  for (int t : times) span = std::max(span, std::abs(cbf::MinutesBefore(t, ref)));
+  return span;
+}
+
 // --- BearingDialog --------------------------------------------------------------
 
 BearingDialog::BearingDialog(wxWindow* parent, int number, const BearingEntry& initial,
                              std::optional<double> variation, bool variation_from_wmm,
-                             const wxString& earlier_bearings, bool can_plot)
+                             const wxString& earlier_bearings,
+                             const std::vector<int>& earlier_minutes, bool can_plot)
     : wxDialog(parent, wxID_ANY, wxString::Format(_("Cross bearing - bearing %d"), number)),
-      m_entry(initial) {
+      m_entry(initial),
+      m_earlier_minutes(earlier_minutes) {
   int gap = FromDIP(8);
   auto* top = new wxBoxSizer(wxVERTICAL);
 
@@ -70,6 +81,16 @@ BearingDialog::BearingDialog(wxWindow* parent, int number, const BearingEntry& i
                          variation ? W(cbf::FormatVarDev(*variation)) : wxString(), 70,
                          variation_from_wmm ? _("(WMM)") : _("e.g. 1.5W"), &m_variation_hint);
   top->Add(grid, 0, wxLEFT | wxRIGHT | wxBOTTOM, gap);
+
+  m_running_note = new wxStaticText(this, wxID_ANY, "");
+  m_running_note->SetForegroundColour(wxColour(0, 90, 170));
+  top->Add(m_running_note, 0, wxLEFT | wxRIGHT | wxBOTTOM, gap);
+  UpdateRunningFixNote();
+  m_time->Bind(wxEVT_TEXT, [this](wxCommandEvent&) {
+    UpdateRunningFixNote();
+    GetSizer()->Fit(this);
+    Layout();
+  });
 
   m_position = new wxStaticText(this, wxID_ANY, "");
   top->Add(m_position, 0, wxLEFT | wxRIGHT | wxBOTTOM, gap);
@@ -102,6 +123,23 @@ void BearingDialog::UpdatePositionText() {
   m_position->SetLabel((m_entry.typed_position ? _("Position (typed)") : _("Position (from chart)")) +
                        "\n" + W(cbf::FormatLat(m_entry.position.lat)) + "  " +
                        W(cbf::FormatLon(m_entry.position.lon)));
+}
+
+// Say when this bearing's time makes the set a running fix, so the user
+// knows the plugin will ask for course, speed and tide.
+void BearingDialog::UpdateRunningFixNote() {
+  auto now = cbf::ParseTime(U(m_time->GetValue()));
+  if (m_earlier_minutes.empty() || !now || TimeSpan(m_earlier_minutes, *now) <= kRunningFixMinutes) {
+    m_running_note->Hide();
+    return;
+  }
+  int first = *now;
+  for (int t : m_earlier_minutes)
+    if (cbf::MinutesBefore(t, *now) > cbf::MinutesBefore(first, *now)) first = t;
+  m_running_note->SetLabel(wxString::Format(
+      _("Running fix: bearings span %s to %s.\nYou will be asked for course, speed and tide."),
+      W(cbf::FormatTime(first)), W(cbf::FormatTime(*now))));
+  m_running_note->Show();
 }
 
 void BearingDialog::OfferVariation(double variation) {
