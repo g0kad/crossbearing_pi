@@ -140,9 +140,12 @@ jobs:
       - name: Show plugin dependencies
         run: otool -L build-osx/app/*/OpenCPN.app/Contents/PlugIns/*.dylib || true
       - name: Upload to Cloudsmith
-        # upload.sh only knows CircleCI's pip --user path
+        # Homebrew python refuses the build script's pip --user install
+        # (externally-managed-environment), so use a venv for the CLI.
         run: |
-          export PATH="$PATH:$(python3 -m site --user-base)/bin"
+          python3 -m venv "$RUNNER_TEMP/cloudsmith"
+          "$RUNNER_TEMP/cloudsmith/bin/pip" install -q cloudsmith-cli
+          export PATH="$RUNNER_TEMP/cloudsmith/bin:$PATH"
           cd build-osx && /bin/bash < upload.sh
       - uses: actions/upload-artifact@v4
         with:
