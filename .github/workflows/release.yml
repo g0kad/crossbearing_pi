@@ -1,17 +1,21 @@
 ---
 # Build plugin tarballs on GitHub Actions with the template's own CI scripts,
-# and publish them on GitHub Releases instead of Cloudsmith.
+# upload them to Cloudsmith and publish them on GitHub Releases.
 #
 # Debian targets: bookworm (12) and trixie (13), x86_64 and arm64.
 # Windows: Win32 and x64 (x64 is for the upcoming 64-bit OpenCPN for Windows).
 #  - push to main / manual run: build everything, keep the tarballs and
 #    metadata as workflow artifacts (for testing).
+#  - every build uploads to Cloudsmith when CLOUDSMITH_API_KEY is set:
+#    untagged -> opencpn/crossbearing-alpha, tag with beta/rc ->
+#    opencpn/crossbearing-beta, other tags -> opencpn/crossbearing-prod
+#    (defaults in Plugin.cmake). Those .xml files, pointing at Cloudsmith,
+#    are what goes into a catalog PR (OpenCPN/plugins).
 #  - tag v*: also create a GitHub pre-release with the tarballs and the
 #    metadata .xml files, rewritten so <tarball-url> points at the release.
-#    Those .xml files are what goes into a catalog PR (OpenCPN/plugins).
 #
-# No secrets are needed: the template upload scripts skip Cloudsmith and
-# the catalog git-push when their keys are not set.
+# The template upload scripts skip Cloudsmith and the catalog git-push when
+# their keys are not set.
 name: release
 
 on:
@@ -19,6 +23,9 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+
+env:
+  CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
 
 jobs:
   debian:
@@ -43,6 +50,8 @@ jobs:
           fetch-depth: 10
       - name: Build
         run: ci/circleci-build-debian-docker.sh
+      - name: Upload to Cloudsmith
+        run: cd build-debian && /bin/bash < upload.sh
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.target }}-${{ matrix.arch }}
@@ -71,6 +80,8 @@ jobs:
           fetch-depth: 10
       - name: Build
         run: ci/circleci-build-flatpak.sh
+      - name: Upload to Cloudsmith
+        run: cd /build-flatpak && /bin/bash < upload.sh
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-flatpak-${{ matrix.arch }}
@@ -128,6 +139,11 @@ jobs:
           ci/circleci-build-macos.sh
       - name: Show plugin dependencies
         run: otool -L build-osx/app/*/OpenCPN.app/Contents/PlugIns/*.dylib || true
+      - name: Upload to Cloudsmith
+        # upload.sh only knows CircleCI's pip --user path
+        run: |
+          export PATH="$PATH:$(python3 -m site --user-base)/bin"
+          cd build-osx && /bin/bash < upload.sh
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-macos-universal
